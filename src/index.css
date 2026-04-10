@@ -1,0 +1,78 @@
+:root {
+  --bg: #efe7db;
+  --bg-deep: #d8cfbf;
+  --text: #43544e;
+  --text-strong: #152b25;
+  --muted: #6a7a74;
+  --accent: #147a78;
+  --sans:
+    'Avenir Next',
+    'Trebuchet MS',
+    'Segoe UI',
+    sans-serif;
+  --mono:
+    'JetBrains Mono',
+    'Fira Code',
+    ui-monospace,
+    monospace;
+
+  font-family: var(--sans);
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(20, 122, 120, 0.12), transparent 26%),
+    radial-gradient(circle at 80% 20%, rgba(220, 108, 53, 0.1), transparent 22%),
+    linear-gradient(180deg, var(--bg), var(--bg-deep));
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(20, 122, 120, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 122, 120, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, black 55%, transparent 92%);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+code {
+  font-family: var(--mono);
+}
+
+a {
+  color: inherit;
+}
