@@ -6,13 +6,24 @@ import {
   useRef,
   useState,
 } from 'react'
-import { addEdge, reconnectEdge } from '@xyflow/react'
-import { loadProject, saveProject } from '../../storage.js'
-import { createId, createNewNode, normalizeEdge, normalizeNode } from './model.js'
 import {
-  buildDisplayEdges,
-  buildDisplayNodes,
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
+  reconnectEdge,
+} from '@xyflow/react'
+import { loadProject, saveProject } from '../../storage.js'
+import {
+  createId,
+  createNewNode,
+  createStarterGraph,
+  normalizeGraphLayout,
+  normalizeEdge,
+  normalizeNode,
+} from './model.js'
+import {
   createSimulationState,
+  getEdgeResourceNames,
   simulateResources,
 } from './simulation.js'
 
@@ -24,6 +35,7 @@ export function useCanvasEditor() {
   const [editingNodeId, setEditingNodeId] = useState(null)
   const [isReady, setIsReady] = useState(false)
   const [simulationState, setSimulationState] = useState(createSimulationState([]))
+  const [simulationClock, setSimulationClock] = useState(0)
   const reconnectSucceededRef = useRef(false)
   const graphRef = useRef({ nodes: [], edges: [] })
 
@@ -43,25 +55,31 @@ export function useCanvasEditor() {
     async function hydrateProject() {
       try {
         const savedProject = await loadProject()
+        const project =
+          savedProject?.nodes?.length
+            ? {
+                nodes: normalizeGraphLayout(
+                  savedProject.nodes.map((node, index) => normalizeNode(node, index + 1)),
+                ),
+                edges: (savedProject?.edges ?? []).map(normalizeEdge),
+              }
+            : createStarterGraph()
 
         if (cancelled) {
           return
         }
 
-        const hydratedNodes = (savedProject?.nodes ?? []).map((node, index) =>
-          normalizeNode(node, index + 1),
-        )
-        const hydratedEdges = (savedProject?.edges ?? []).map(normalizeEdge)
-
-        setNodes(hydratedNodes)
-        setEdges(hydratedEdges)
-        setSimulationState(createSimulationState(hydratedNodes))
+        setNodes(project.nodes)
+        setEdges(project.edges)
+        setSimulationState(createSimulationState(project.nodes))
         setIsReady(true)
       } catch {
         if (!cancelled) {
-          setNodes([])
-          setEdges([])
-          setSimulationState(createSimulationState([]))
+          const fallbackProject = createStarterGraph()
+
+          setNodes(fallbackProject.nodes)
+          setEdges(fallbackProject.edges)
+          setSimulationState(createSimulationState(fallbackProject.nodes))
           setIsReady(true)
         }
       }
@@ -95,13 +113,11 @@ export function useCanvasEditor() {
       return undefined
     }
 
-    let frameId = 0
     let previousTime = performance.now()
-
-    const step = (currentTime) => {
+    const intervalId = window.setInterval(() => {
+      const currentTime = performance.now()
       const elapsedSeconds = Math.min((currentTime - previousTime) / 1000, 0.5)
       previousTime = currentTime
-
       setSimulationState((currentState) =>
         simulateResources(
           graphRef.current.nodes,
@@ -111,47 +127,50 @@ export function useCanvasEditor() {
           currentTime,
         ),
       )
+      setSimulationClock(currentTime)
+    }, 250)
 
-      frameId = window.requestAnimationFrame(step)
-    }
-
-    frameId = window.requestAnimationFrame(step)
-
-    return () => window.cancelAnimationFrame(frameId)
+    return () => window.clearInterval(intervalId)
   }, [isReady])
 
   const handleNodesChange = useCallback((changes) => {
-    setNodes((currentNodes) => {
-      let nextNodes = currentNodes
+    const removedNodeIds = changes
+      .filter((change) => change.type === 'remove')
+      .map((change) => change.id)
 
-      changes.forEach((change) => {
-        if (change.type === 'position' && change.position) {
-          nextNodes = nextNodes.map((node) =>
-            node.id === change.id ? { ...node, position: change.position } : node,
-          )
-        }
+    if (removedNodeIds.length) {
+      const removedNodeIdsSet = new Set(removedNodeIds)
 
-        if (change.type === 'remove') {
-          nextNodes = nextNodes.filter((node) => node.id !== change.id)
-        }
-      })
+      setSelectedNodeId((currentSelectedNodeId) =>
+        removedNodeIdsSet.has(currentSelectedNodeId) ? null : currentSelectedNodeId,
+      )
+      setEditingNodeId((currentEditingNodeId) =>
+        removedNodeIdsSet.has(currentEditingNodeId) ? null : currentEditingNodeId,
+      )
+      setEdges((currentEdges) =>
+        currentEdges.filter(
+          (edge) => !removedNodeIdsSet.has(edge.source) && !removedNodeIdsSet.has(edge.target),
+        ),
+      )
+    }
 
-      return nextNodes
-    })
+    setNodes((currentNodes) => applyNodeChanges(changes, currentNodes))
   }, [])
 
   const handleEdgesChange = useCallback((changes) => {
-    setEdges((currentEdges) => {
-      let nextEdges = currentEdges
+    const removedEdgeIds = changes
+      .filter((change) => change.type === 'remove')
+      .map((change) => change.id)
 
-      changes.forEach((change) => {
-        if (change.type === 'remove') {
-          nextEdges = nextEdges.filter((edge) => edge.id !== change.id)
-        }
-      })
+    if (removedEdgeIds.length) {
+      const removedEdgeIdsSet = new Set(removedEdgeIds)
 
-      return nextEdges
-    })
+      setSelectedEdgeId((currentSelectedEdgeId) =>
+        removedEdgeIdsSet.has(currentSelectedEdgeId) ? null : currentSelectedEdgeId,
+      )
+    }
+
+    setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges))
   }, [])
 
   const handleConnect = useCallback((connection) => {
@@ -311,15 +330,61 @@ export function useCanvasEditor() {
     }))
   }, [updateEditingNode])
 
-  const canvasNodes = useMemo(
-    () => buildDisplayNodes(nodes, simulationState),
-    [nodes, simulationState],
-  )
+  const canvasNodes = useMemo(() => {
+    return nodes.map((node) => {
+      const runtime = simulationState.runtimeByNodeId[node.id] ?? {
+        progress: 0,
+        inventory: {},
+        lastStatus: 'idle',
+      }
+      const inventoryItems = Object.entries(runtime.inventory ?? {})
+        .filter(([, amount]) => amount > 0)
+        .sort(([left], [right]) => left.localeCompare(right))
 
-  const canvasEdges = useMemo(
-    () => buildDisplayEdges(edges, nodes, simulationState),
-    [edges, nodes, simulationState],
-  )
+      const simulation = {
+        progressPercent: Math.min(100, (runtime.progress / Math.max(node.data.cycleTime, 0.1)) * 100),
+        inventoryItems,
+        hasInputs: node.data.inputs.some((item) => item.resource),
+        status: runtime.lastStatus,
+      }
+
+      return {
+        ...node,
+        type: 'canvasNode',
+        data: {
+          ...node.data,
+          simulation,
+        },
+      }
+    })
+  }, [nodes, simulationState])
+
+  const canvasEdges = useMemo(() => {
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+
+    return edges.map((edge) => {
+      const resources = getEdgeResourceNames(edge, nodeMap)
+      const activity = simulationState.edgeActivityById[edge.id]
+      const isActive = Boolean(activity && simulationClock - activity.timestamp < 1600)
+      const sourceAccent = nodeMap.get(edge.source)?.data.accent ?? '#147a78'
+
+      return {
+        ...edge,
+        type: 'smoothstep',
+        animated: isActive,
+        label: activity?.label ?? (resources.length ? resources.join(', ') : ''),
+        labelStyle: { fill: '#17332d', fontSize: 11, fontWeight: 600 },
+        labelBgStyle: { fill: 'rgba(255, 251, 245, 0.95)' },
+        labelBgPadding: [10, 6],
+        labelBgBorderRadius: 999,
+        style: {
+          stroke: sourceAccent,
+          strokeWidth: 2.5,
+          strokeOpacity: isActive ? 0.95 : 0.36,
+        },
+      }
+    })
+  }, [edges, nodes, simulationClock, simulationState])
 
   return {
     nodes: canvasNodes,

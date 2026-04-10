@@ -1,11 +1,10 @@
 import { Background, Controls, ReactFlow, useReactFlow } from '@xyflow/react'
-import { edgeTypes } from './edgeTypes.js'
 import { NodeSettingsModal } from './NodeSettingsModal.jsx'
 import { nodeTypes } from './nodeTypes.js'
 import { useCanvasEditor } from './useCanvasEditor.js'
 
 export function CanvasEditor() {
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, setCenter } = useReactFlow()
   const {
     nodes,
     canvasEdges,
@@ -37,10 +36,18 @@ export function CanvasEditor() {
       x: nextPosition.x - 110,
       y: nextPosition.y - 60,
     })
+
+    window.requestAnimationFrame(() => {
+      setCenter(nextPosition.x, nextPosition.y, { duration: 180, zoom: 1 })
+    })
   }
 
   return (
     <main className="canvas-shell">
+      <div className="canvas-debug">
+        nodes {nodes.length} | edges {canvasEdges.length}
+      </div>
+
       <div className="floating-actions">
         <button
           type="button"
@@ -64,7 +71,6 @@ export function CanvasEditor() {
         nodes={nodes}
         edges={canvasEdges}
         nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
         onNodeClick={handleNodeClick}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
@@ -73,10 +79,9 @@ export function CanvasEditor() {
         onReconnect={handleReconnect}
         onReconnectEnd={handleReconnectEnd}
         onSelectionChange={handleSelectionChange}
-        fitView
         minZoom={0.3}
         maxZoom={2}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.9 }}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         deleteKeyCode={['Backspace', 'Delete']}
         edgesReconnectable
       >

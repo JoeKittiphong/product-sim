@@ -16,6 +16,19 @@
   gap: 10px;
 }
 
+.canvas-debug {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 251, 245, 0.92);
+  color: #17332d;
+  box-shadow: 0 12px 24px rgba(22, 42, 36, 0.12);
+  font-size: 0.82rem;
+}
+
 .fab {
   width: 52px;
   height: 52px;
@@ -34,6 +47,7 @@
 }
 
 .canvas-node {
+  position: relative;
   min-width: 190px;
   max-width: 240px;
   padding: 14px 18px;
@@ -124,6 +138,25 @@
     0 0 0 3px rgba(255, 255, 255, 0.96),
     0 0 0 6px color-mix(in srgb, var(--node-accent) 55%, transparent),
     0 14px 26px rgba(23, 42, 37, 0.12);
+}
+
+.canvas-node-shell {
+  position: relative;
+}
+
+.canvas-node__handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  background: var(--node-accent);
+  box-shadow: 0 4px 10px rgba(23, 42, 37, 0.14);
+}
+
+.react-flow__node-canvasNode {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
 }
 
 .react-flow__controls {
@@ -320,6 +353,11 @@
 }
 
 @media (max-width: 720px) {
+  .canvas-debug {
+    top: 12px;
+    left: 12px;
+  }
+
   .floating-actions {
     top: auto;
     right: 14px;
