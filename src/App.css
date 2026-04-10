@@ -117,8 +117,16 @@
   margin-top: 10px;
 }
 
+.canvas-node__connections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .canvas-node__inventory-chip,
-.canvas-node__inventory-empty {
+.canvas-node__inventory-empty,
+.canvas-node__connection-chip {
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
@@ -131,6 +139,18 @@
 .canvas-node__inventory-empty {
   background: rgba(23, 51, 45, 0.06);
   color: rgba(22, 50, 44, 0.58);
+}
+
+.canvas-node__connection-chip {
+  background: rgba(57, 102, 216, 0.08);
+  color: rgba(22, 50, 44, 0.74);
+  font-size: 0.68rem;
+}
+
+.canvas-node__missing {
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: #8a3429;
 }
 
 .canvas-node.is-selected {
@@ -330,6 +350,24 @@
   margin: 0;
   color: rgba(22, 50, 44, 0.62);
   font-size: 0.9rem;
+}
+
+.connection-list {
+  display: grid;
+  gap: 10px;
+}
+
+.connection-row {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(57, 102, 216, 0.06);
+  color: #17332d;
+}
+
+.connection-row span {
+  color: rgba(22, 50, 44, 0.68);
 }
 
 @keyframes flow-dash {

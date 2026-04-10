@@ -4,32 +4,69 @@ const BUFFER_MULTIPLIER = 2
 const MAX_BATCHES_PER_STEP = 24
 const MIN_STEP_SECONDS = 1 / 30
 
+function getNodeOutputs(node) {
+  return node.data.outputs.filter((output) => output.resource)
+}
+
+function getNodeInputs(node) {
+  return node.data.inputs.filter((input) => input.resource)
+}
+
 function roundAmount(value) {
   return Number.parseFloat(Number(value).toFixed(3))
 }
 
-function getDeclaredResources(node) {
+function buildIncomingResourcesByNodeId(nodes, edges) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  const incomingResourcesByNodeId = {}
+
+  nodes.forEach((node) => {
+    incomingResourcesByNodeId[node.id] = []
+  })
+
+  edges.forEach((edge) => {
+    const sourceNode = nodeMap.get(edge.source)
+
+    if (!sourceNode || !incomingResourcesByNodeId[edge.target]) {
+      return
+    }
+
+    getNodeOutputs(sourceNode).forEach((output) => {
+      if (!incomingResourcesByNodeId[edge.target].includes(output.resource)) {
+        incomingResourcesByNodeId[edge.target].push(output.resource)
+      }
+    })
+  })
+
+  return incomingResourcesByNodeId
+}
+
+function getDeclaredResources(node, incomingResources = []) {
   const resources = new Set()
 
-  node.data.inputs.forEach((input) => {
+  getNodeInputs(node).forEach((input) => {
     if (input.resource) {
       resources.add(input.resource)
     }
   })
 
-  node.data.outputs.forEach((output) => {
+  getNodeOutputs(node).forEach((output) => {
     if (output.resource) {
       resources.add(output.resource)
     }
   })
 
+  incomingResources.forEach((resource) => {
+    resources.add(resource)
+  })
+
   return Array.from(resources)
 }
 
-function createNodeRuntime(node, previousEntry) {
+function createNodeRuntime(node, previousEntry, incomingResources) {
   const inventory = {}
 
-  getDeclaredResources(node).forEach((resource) => {
+  getDeclaredResources(node, incomingResources).forEach((resource) => {
     inventory[resource] = Number(previousEntry?.inventory?.[resource] ?? 0)
   })
 
@@ -40,19 +77,31 @@ function createNodeRuntime(node, previousEntry) {
   }
 }
 
-export function createSimulationState(nodes) {
+export function createSimulationState(nodes, edges = []) {
+  const incomingResourcesByNodeId = buildIncomingResourcesByNodeId(nodes, edges)
+
   return {
     runtimeByNodeId: nodes.reduce((accumulator, node) => {
-      accumulator[node.id] = createNodeRuntime(node)
+      accumulator[node.id] = createNodeRuntime(
+        node,
+        undefined,
+        incomingResourcesByNodeId[node.id] ?? [],
+      )
       return accumulator
     }, {}),
     edgeActivityById: {},
   }
 }
 
-function reconcileRuntime(nodes, previousRuntimeByNodeId) {
+function reconcileRuntime(nodes, previousRuntimeByNodeId, edges) {
+  const incomingResourcesByNodeId = buildIncomingResourcesByNodeId(nodes, edges)
+
   return nodes.reduce((accumulator, node) => {
-    accumulator[node.id] = createNodeRuntime(node, previousRuntimeByNodeId?.[node.id])
+    accumulator[node.id] = createNodeRuntime(
+      node,
+      previousRuntimeByNodeId?.[node.id],
+      incomingResourcesByNodeId[node.id] ?? [],
+    )
     return accumulator
   }, {})
 }
@@ -75,9 +124,65 @@ export function getEdgeResourceNames(edge, nodeMap) {
     targetNode.data.inputs.filter((item) => item.resource).map((item) => item.resource),
   )
 
-  return sourceNode.data.outputs
-    .filter((item) => item.resource && targetInputs.has(item.resource))
-    .map((item) => item.resource)
+  const outputs = getNodeOutputs(sourceNode)
+  const matchingOutputs = outputs.filter((item) => targetInputs.has(item.resource))
+
+  return (matchingOutputs.length ? matchingOutputs : outputs).map((item) => item.resource)
+}
+
+export function buildNodeConnectionInsights(nodes, edges) {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]))
+  const insightsByNodeId = nodes.reduce((accumulator, node) => {
+    accumulator[node.id] = {
+      incomingSources: [],
+      missingInputs: [],
+    }
+    return accumulator
+  }, {})
+
+  edges.forEach((edge) => {
+    const sourceNode = nodeMap.get(edge.source)
+    const targetNode = nodeMap.get(edge.target)
+
+    if (!sourceNode || !targetNode) {
+      return
+    }
+
+    const targetInputs = new Set(getNodeInputs(targetNode).map((item) => item.resource))
+    const sourceOutputs = getNodeOutputs(sourceNode)
+
+    if (!sourceOutputs.length) {
+      return
+    }
+
+    const preferredOutputs = sourceOutputs.filter((output) => targetInputs.has(output.resource))
+    const resourcesToShow = preferredOutputs.length ? preferredOutputs : sourceOutputs
+
+    insightsByNodeId[targetNode.id].incomingSources.push({
+      edgeId: edge.id,
+      sourceId: sourceNode.id,
+      sourceLabel: sourceNode.data.label,
+      resources: resourcesToShow.map((resource) => ({
+        resource: resource.resource,
+        amount: resource.amount,
+        matched: targetInputs.has(resource.resource),
+      })),
+    })
+  })
+
+  nodes.forEach((node) => {
+    const suppliedResources = new Set(
+      insightsByNodeId[node.id].incomingSources.flatMap((source) =>
+        source.resources.filter((resource) => resource.matched).map((resource) => resource.resource),
+      ),
+    )
+
+    insightsByNodeId[node.id].missingInputs = getNodeInputs(node).filter(
+      (input) => !suppliedResources.has(input.resource),
+    )
+  })
+
+  return insightsByNodeId
 }
 
 export function buildDisplayNodes(nodes, simulationState) {
@@ -128,11 +233,11 @@ export function buildDisplayEdges(edges, nodes, simulationState) {
 
 export function simulateResources(nodes, edges, currentState, elapsedSeconds, now) {
   if (!nodes.length) {
-    return createSimulationState(nodes)
+    return createSimulationState(nodes, edges)
   }
 
   const stepSeconds = Math.max(elapsedSeconds, MIN_STEP_SECONDS)
-  const runtimeByNodeId = reconcileRuntime(nodes, currentState.runtimeByNodeId)
+  const runtimeByNodeId = reconcileRuntime(nodes, currentState.runtimeByNodeId, edges)
   const edgeActivityById = { ...currentState.edgeActivityById }
   const nodeMap = new Map(nodes.map((node) => [node.id, node]))
   const edgesBySource = edges.reduce((accumulator, edge) => {
@@ -211,7 +316,7 @@ export function simulateResources(nodes, edges, currentState, elapsedSeconds, no
     const targetRuntime = runtimeByNodeId[targetNode.id]
     const transfers = []
 
-    sourceNode.data.outputs.forEach((output) => {
+    getNodeOutputs(sourceNode).forEach((output) => {
       if (!output.resource) {
         return
       }
@@ -220,12 +325,10 @@ export function simulateResources(nodes, edges, currentState, elapsedSeconds, no
         (input) => input.resource && input.resource === output.resource,
       )
 
-      if (!targetInput) {
-        return
-      }
-
       const available = sourceRuntime.inventory[output.resource] ?? 0
-      const desired = targetInput.amount * BUFFER_MULTIPLIER
+      const desired = targetInput
+        ? targetInput.amount * BUFFER_MULTIPLIER
+        : Math.max(output.amount * BUFFER_MULTIPLIER, BUFFER_MULTIPLIER)
       const currentAtTarget = targetRuntime.inventory[output.resource] ?? 0
       const missing = Math.max(0, desired - currentAtTarget)
       const transferAmount = Math.min(available, missing)

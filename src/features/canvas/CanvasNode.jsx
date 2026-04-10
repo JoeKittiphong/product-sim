@@ -6,6 +6,8 @@ function getRuntimeSnapshot(simulation) {
     progressPercent: 0,
     inventoryItems: [],
     hasInputs: false,
+    incomingSources: [],
+    missingInputs: [],
     status: 'idle',
   }
 }
@@ -24,6 +26,7 @@ function getStatusText(status) {
 
 function CanvasNodeContent({ data, simulation, selected = false }) {
   const runtime = getRuntimeSnapshot(simulation)
+  const visibleIncomingSources = runtime.incomingSources.slice(0, 2)
 
   return (
     <div
@@ -59,6 +62,25 @@ function CanvasNodeContent({ data, simulation, selected = false }) {
           </span>
         )}
       </div>
+      {visibleIncomingSources.length ? (
+        <div className="canvas-node__connections">
+          {visibleIncomingSources.map((source) => (
+            <span key={source.edgeId} className="canvas-node__connection-chip">
+              {source.sourceLabel}: {source.resources.map((resource) => resource.resource).join(', ')}
+            </span>
+          ))}
+          {runtime.incomingSources.length > visibleIncomingSources.length ? (
+            <span className="canvas-node__connection-chip">
+              +{runtime.incomingSources.length - visibleIncomingSources.length} more
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {runtime.missingInputs.length ? (
+        <div className="canvas-node__missing">
+          Need {runtime.missingInputs.map((input) => input.resource).join(', ')}
+        </div>
+      ) : null}
     </div>
   )
 }

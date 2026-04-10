@@ -10,6 +10,11 @@ export function NodeSettingsModal({
     return null
   }
 
+  const connectionInsight = node.data.connectionInsight ?? {
+    incomingSources: [],
+    missingInputs: [],
+  }
+
   return (
     <div className="node-modal-backdrop">
       <section className="node-modal" onClick={(event) => event.stopPropagation()}>
@@ -51,6 +56,34 @@ export function NodeSettingsModal({
 
         <section className="port-section">
           <div className="port-section__header">
+            <h3>Incoming Links</h3>
+          </div>
+
+          {connectionInsight.incomingSources.length ? (
+            <div className="connection-list">
+              {connectionInsight.incomingSources.map((source) => (
+                <div key={source.edgeId} className="connection-row">
+                  <strong>{source.sourceLabel}</strong>
+                  <span>{source.resources.map((resource) => resource.resource).join(', ')}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="port-empty">Connect another node into this one to supply resources.</p>
+          )}
+
+          {connectionInsight.missingInputs.length ? (
+            <p className="port-empty">
+              Missing source:{' '}
+              {connectionInsight.missingInputs
+                .map((input) => `${input.resource} x${input.amount}`)
+                .join(', ')}
+            </p>
+          ) : null}
+        </section>
+
+        <section className="port-section">
+          <div className="port-section__header">
             <h3>Inputs</h3>
             <button type="button" className="mini-button" onClick={() => onAddPort('inputs')}>
               + input
@@ -86,7 +119,9 @@ export function NodeSettingsModal({
               </div>
             ))
           ) : (
-            <p className="port-empty">ไม่มี input หมายถึง node นี้ผลิตเองได้</p>
+            <p className="port-empty">
+              No inputs yet. This node can still receive stock from linked nodes.
+            </p>
           )}
         </section>
 
@@ -127,7 +162,7 @@ export function NodeSettingsModal({
               </div>
             ))
           ) : (
-            <p className="port-empty">ยังไม่มี output ของ node นี้</p>
+            <p className="port-empty">No outputs yet.</p>
           )}
         </section>
       </section>

@@ -22,6 +22,7 @@ import {
   normalizeNode,
 } from './model.js'
 import {
+  buildNodeConnectionInsights,
   createSimulationState,
   getEdgeResourceNames,
   simulateResources,
@@ -38,8 +39,6 @@ export function useCanvasEditor() {
   const [simulationClock, setSimulationClock] = useState(0)
   const reconnectSucceededRef = useRef(false)
   const graphRef = useRef({ nodes: [], edges: [] })
-
-  const editingNode = nodes.find((node) => node.id === editingNodeId) ?? null
 
   const persistProject = useEffectEvent(async (project) => {
     try {
@@ -71,7 +70,7 @@ export function useCanvasEditor() {
 
         setNodes(project.nodes)
         setEdges(project.edges)
-        setSimulationState(createSimulationState(project.nodes))
+        setSimulationState(createSimulationState(project.nodes, project.edges))
         setIsReady(true)
       } catch {
         if (!cancelled) {
@@ -79,7 +78,7 @@ export function useCanvasEditor() {
 
           setNodes(fallbackProject.nodes)
           setEdges(fallbackProject.edges)
-          setSimulationState(createSimulationState(fallbackProject.nodes))
+          setSimulationState(createSimulationState(fallbackProject.nodes, fallbackProject.edges))
           setIsReady(true)
         }
       }
@@ -330,6 +329,11 @@ export function useCanvasEditor() {
     }))
   }, [updateEditingNode])
 
+  const connectionInsightsByNodeId = useMemo(
+    () => buildNodeConnectionInsights(nodes, edges),
+    [nodes, edges],
+  )
+
   const canvasNodes = useMemo(() => {
     return nodes.map((node) => {
       const runtime = simulationState.runtimeByNodeId[node.id] ?? {
@@ -337,14 +341,23 @@ export function useCanvasEditor() {
         inventory: {},
         lastStatus: 'idle',
       }
+      const connectionInsight = connectionInsightsByNodeId[node.id] ?? {
+        incomingSources: [],
+        missingInputs: [],
+      }
       const inventoryItems = Object.entries(runtime.inventory ?? {})
         .filter(([, amount]) => amount > 0)
         .sort(([left], [right]) => left.localeCompare(right))
 
       const simulation = {
-        progressPercent: Math.min(100, (runtime.progress / Math.max(node.data.cycleTime, 0.1)) * 100),
+        progressPercent: Math.min(
+          100,
+          (runtime.progress / Math.max(node.data.cycleTime, 0.1)) * 100,
+        ),
         inventoryItems,
         hasInputs: node.data.inputs.some((item) => item.resource),
+        incomingSources: connectionInsight.incomingSources,
+        missingInputs: connectionInsight.missingInputs,
         status: runtime.lastStatus,
       }
 
@@ -353,11 +366,17 @@ export function useCanvasEditor() {
         type: 'canvasNode',
         data: {
           ...node.data,
+          connectionInsight,
           simulation,
         },
       }
     })
-  }, [nodes, simulationState])
+  }, [connectionInsightsByNodeId, nodes, simulationState])
+
+  const editingNode = useMemo(
+    () => canvasNodes.find((node) => node.id === editingNodeId) ?? null,
+    [canvasNodes, editingNodeId],
+  )
 
   const canvasEdges = useMemo(() => {
     const nodeMap = new Map(nodes.map((node) => [node.id, node]))
